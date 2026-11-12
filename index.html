@@ -153,6 +153,13 @@
   .dict-row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
   .dict-row input { flex: 1; min-width: 0; padding: 9px 10px; font-size: 15px; border-radius: 10px; }
   .to-arrow { color: var(--sub); }
+  .guide { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 12px; }
+  .guide summary { cursor: pointer; font-weight: 700; font-size: 14.5px; padding: 6px 0; color: var(--green); }
+  .guide-body { font-size: 13.5px; line-height: 1.75; color: var(--ink); }
+  .guide-body p { margin: 8px 0; }
+  .guide-body h5 { margin: 14px 0 4px; font-size: 14px; color: var(--accent); }
+  .guide-body ol, .guide-body ul { margin: 4px 0; padding-left: 22px; }
+  .guide-body .warn { background: var(--accent-soft); border-radius: 10px; padding: 8px 10px; }
   .pro-card { background: var(--bg); border-radius: 14px; padding: 14px; margin-bottom: 16px; }
   .pro-card .switch { border-top: none; }
   textarea.small-ta { min-height: 96px; font-size: 14px; line-height: 1.5; }
@@ -309,6 +316,48 @@
       <div class="note">声の種類や話し方を変えたら、音声を作り直すと反映されます。</div></div>
     <div class="set"><label>APIキー</label><input type="password" id="sApiKey" placeholder="sk- で始まる文字" autocomplete="off" autocapitalize="off" spellcheck="false">
       <div class="note">このスマホ（ブラウザ）の中にだけ保存されます。バックアップのファイルにも入りません。</div></div>
+
+    <details class="guide">
+      <summary>📘 APIキーの取り方（はじめての方へ）</summary>
+      <div class="guide-body">
+        <p>OpenAI（ChatGPTの会社）の<b>開発者向けアカウント</b>を作って、お金を入れておきます。1回だけ・10〜15分。<br>
+        <b>ChatGPTの有料プランとは別のもの</b>で、ChatGPTに課金していなくても使えます。</p>
+        <p class="warn">⚠ 原稿の英文はOpenAIに送られます。会社の資料を社外のAIに送ってよいか、先に会社のルールを確認してください。</p>
+
+        <h5>1. アカウントを作る</h5>
+        <ol>
+          <li><b>platform.openai.com</b> を開く</li>
+          <li><b>Sign up</b>（登録）。ChatGPTのアカウントがあれば <b>Log in</b> でOK</li>
+          <li>メールの確認と、電話番号（SMS）の確認をする</li>
+        </ol>
+
+        <h5>2. お金を入れる（前払い）</h5>
+        <ol>
+          <li>右上の歯車（<b>Settings</b>）→ <b>Billing</b></li>
+          <li><b>Add payment details</b> でカードを登録</li>
+          <li><b>Add to credit balance</b> で <b>5ドル</b>（約750円）を入れる</li>
+          <li><b>Auto recharge（自動チャージ）はオフ</b>のまま</li>
+        </ol>
+        <p>使った分だけ減る前払いなので、入れた額より多く請求されません。原稿1本（3分くらい）で数円〜十数円の目安です。</p>
+
+        <h5>3. 使いすぎ防止（おすすめ）</h5>
+        <ol><li><b>Settings</b> → <b>Limits</b> で、月の上限を5ドルくらいにする</li></ol>
+
+        <h5>4. APIキーを作って、ここに入れる</h5>
+        <ol>
+          <li><b>Settings</b> → <b>API keys</b> → <b>Create new secret key</b>（名前は「英語アプリ」など）</li>
+          <li>出てきた <b>sk- で始まる長い文字</b>をコピー（<b>この画面でしか表示されません</b>）</li>
+          <li>すぐに、上の「<b>APIキー</b>」の欄に貼りつける</li>
+        </ol>
+
+        <h5>APIキーの注意</h5>
+        <ul>
+          <li><b>LINEやメールで人に送らない</b>（家族にも）。メモにも保存しない</li>
+          <li>スマホをなくしたときは、<b>API keys</b> の画面でそのキーを消す（Revoke）と、すぐ使えなくなります</li>
+          <li>画面の英語や場所は変わることがあります。わからなければスクリーンショットを撮って聞いてください</li>
+        </ul>
+      </div>
+    </details>
   </div>
 
   <div id="pageBackup" class="hidden">
@@ -665,7 +714,7 @@ function closeSheet() { $("sheet").classList.remove("on"); $("sheetBg").classLis
 function showDict(on) { showPage(on ? "Dict" : "Main"); }
 function showPage(name) {
   ["Main", "Dict", "Backup", "Pro"].forEach(n => $("page" + n).classList.toggle("hidden", n !== name));
-  if (name === "Pro") proUI();
+  if (name === "Pro") { proUI(); document.querySelector("#pagePro .guide").open = !(ST.apiKey || "").trim(); }
   if (name === "Dict") renderDict();
   if (name === "Backup") $("bkInfo").textContent = mem.lastBackup ? "前回の書き出し：" + mem.lastBackup : "まだ書き出したことがありません";
   $("sheet").scrollTop = 0;
