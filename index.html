@@ -153,6 +153,11 @@
   .dict-row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
   .dict-row input { flex: 1; min-width: 0; padding: 9px 10px; font-size: 15px; border-radius: 10px; }
   .to-arrow { color: var(--sub); }
+  .pro-card { background: var(--bg); border-radius: 14px; padding: 14px; margin-bottom: 16px; }
+  .pro-card .switch { border-top: none; }
+  textarea.small-ta { min-height: 96px; font-size: 14px; line-height: 1.5; }
+  #proPill.on { background: var(--green); color: #fff; }
+  #pMode { color: var(--green); font-weight: 700; margin-right: 8px; }
   .mini { flex: none; border: none; background: var(--bg); width: 34px; height: 34px; border-radius: 50%; font-size: 13px; }
   .lock { padding-top: calc(16vh + var(--safe-t)); max-width: 380px; text-align: center; }
   .lock .card { padding: 30px 24px 22px; }
@@ -242,6 +247,7 @@
     <div class="wrap">
       <button class="icon-btn" id="readBack" aria-label="トップへ">←</button>
       <h1 class="jp" id="readTitle"></h1>
+      <button class="pill jp hidden" id="proPill">✨ プロの声</button>
       <button class="pill jp" id="readEdit">✎ 編集</button>
     </div>
     <div class="chips jp" id="chips"></div>
@@ -250,7 +256,7 @@
 
   <div class="player">
     <div class="wrap">
-      <div class="pmeta jp"><span id="pSection"></span><span id="pCount"></span></div>
+      <div class="pmeta jp"><span id="pSection"></span><span><span id="pMode"></span><span id="pCount"></span></span></div>
       <div class="progress"><div id="pBar"></div></div>
       <div class="ctrls jp">
         <button id="bPrev" aria-label="前の文">⏮</button>
@@ -261,6 +267,7 @@
       </div>
     </div>
   </div>
+  <audio id="proAudio" preload="auto" playsinline></audio>
 </section>
 
 <!-- ============ 設定シート ============ -->
@@ -280,8 +287,28 @@
   <div class="switch"><div>強調（太字）と区切り（／）を表示<small>どこを強く言い、どこで息つぎするかの目印</small></div><input type="checkbox" id="sMarks"></div>
   <div class="switch"><div>最後まで行ったら最初から<small>ながら聴き用</small></div><input type="checkbox" id="sLoop"></div>
   <div class="switch"><div>文字を隠す<small>聴くだけで思い出す練習（文をタップで表示）</small></div><input type="checkbox" id="sHide"></div>
+  <button class="row-link" id="openPro"><span>プロの声（OpenAI・有料）<small>ネイティブのプレゼンターのような声。画面を消しても聴ける</small></span><span>›</span></button>
   <button class="row-link" id="openDict"><span>読み方の辞書<small>固有名詞などの読み方を直す</small></span><span>›</span></button>
   <button class="row-link" id="openBackup"><span>データのバックアップ<small>原稿と設定をファイルに保存・もとにもどす</small></span><span>›</span></button>
+  </div>
+
+  <div id="pagePro" class="hidden">
+    <h4><button class="back-mini" id="closePro">←</button> プロの声（OpenAI・有料）</h4>
+    <div class="note" style="margin:0 0 14px">OpenAIのAIが、ネイティブのプレゼンターのような声で音声を作ります。<br>作った音声はこのスマホに保存されるので、次からはお金がかからず、画面を消しても聴けます。</div>
+    <div id="proHere" class="pro-card hidden">
+      <b id="proTitle"></b>
+      <div class="note" id="proState" style="margin:4px 0 10px"></div>
+      <button class="btn main" id="proMake" style="width:100%">✨ この原稿の音声を作る</button>
+      <div class="note" id="proProg" style="margin-top:8px"></div>
+      <div class="switch" id="proUseRow"><div>プロの声で再生する<small>オフにすると、ブラウザの声で読みます</small></div><input type="checkbox" id="sUsePro"></div>
+      <button class="btn" id="proDel" style="width:100%;margin-top:4px;background:var(--card)">この原稿の音声を消す</button>
+    </div>
+    <div class="set"><label>声の種類</label><select id="sProVoice"></select>
+      <button class="btn" id="proTry" style="width:100%;margin-top:8px">▶ この声を試しに聴く（1文・約0.1円）</button></div>
+    <div class="set"><label>話し方の指示（英語）</label><textarea id="sProStyle" class="small-ta"></textarea>
+      <div class="note">声の種類や話し方を変えたら、音声を作り直すと反映されます。</div></div>
+    <div class="set"><label>APIキー</label><input type="password" id="sApiKey" placeholder="sk- で始まる文字" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <div class="note">このスマホ（ブラウザ）の中にだけ保存されます。バックアップのファイルにも入りません。</div></div>
   </div>
 
   <div id="pageBackup" class="hidden">
@@ -521,13 +548,13 @@ function tokenize(text) {
 
 /* ----- 読み方の辞書（声に読ませるときだけ置きかえる） ----- */
 const escRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-function sayWord(w) {
+function sayWord(w, noPause) {
   let t = w.text;
   for (const d of ST.dict || []) {
     if (!d.from || !d.to) continue;
     t = t.replace(new RegExp("(^|[^A-Za-z])" + escRe(d.from.trim()) + "(?![A-Za-z])", "gi"), "$1" + d.to.trim());
   }
-  if (w.pause && !/[,.;:!?]$/.test(t)) t += ",";
+  if (w.pause && !noPause && !/[,.;:!?]$/.test(t)) t += ",";
   return t;
 }
 
@@ -570,6 +597,7 @@ function showRead(s, secIdx) {
   if (!sentences.length) { box.innerHTML = `<p class="empty jp">英文がありません。「✎ 編集」から入れてください。</p>`; }
   cur = secStart[secIdx] ?? 0; curWord = 0;
   mark(cur, -1); updateMeta();
+  proLoad(s);
   if (secIdx) setTimeout(() => $("sec" + secIdx)?.scrollIntoView({ block: "start" }), 30);
 }
 $("readBack").onclick = () => go("top");
@@ -636,7 +664,8 @@ function closeSheet() { $("sheet").classList.remove("on"); $("sheetBg").classLis
 /* ----- 読み方の辞書の画面 ----- */
 function showDict(on) { showPage(on ? "Dict" : "Main"); }
 function showPage(name) {
-  ["Main", "Dict", "Backup"].forEach(n => $("page" + n).classList.toggle("hidden", n !== name));
+  ["Main", "Dict", "Backup", "Pro"].forEach(n => $("page" + n).classList.toggle("hidden", n !== name));
+  if (name === "Pro") proUI();
   if (name === "Dict") renderDict();
   if (name === "Backup") $("bkInfo").textContent = mem.lastBackup ? "前回の書き出し：" + mem.lastBackup : "まだ書き出したことがありません";
   $("sheet").scrollTop = 0;
@@ -672,7 +701,8 @@ $("closeDict").onclick = () => showDict(false);
 $("openBackup").onclick = () => showPage("Backup");
 $("closeBackup").onclick = () => showPage("Main");
 $("bkExport").onclick = () => {
-  const { pin, ...keep } = mem; // パスワードはファイルに入れない
+  const { pin, ...keep } = mem; // パスワードとAPIキーはファイルに入れない
+  keep.settings = { ...mem.settings }; delete keep.settings.apiKey;
   const data = { app: "english-02-script", exportedAt: new Date().toISOString(), ...keep };
   const d = new Date(), stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
   const a = document.createElement("a");
@@ -736,6 +766,7 @@ function updateMeta() {
 function setPlay(on) { playing = on; $("bPlay").textContent = on ? "❚❚" : "▶"; }
 
 function speakFrom(si, wi = 0) {
+  if (proActive()) return proPlayFrom(si, wi);
   if (!synth) { toast("このブラウザは読み上げできません"); return; }
   if (!sentences[si]) return;
   clearTimers();
@@ -806,7 +837,11 @@ function speakFrom(si, wi = 0) {
   // iPhone では cancel 直後の speak が無視されることがあるので少し待つ
   if (busy) timers.push(setTimeout(() => { if (my === gen) synth.speak(u); }, 80)); else synth.speak(u);
 }
-function stopSpeech() { clearTimers(); gen++; try { synth && synth.cancel(); } catch (e) {} setPlay(false); }
+function stopSpeech() {
+  clearTimers(); gen++; try { synth && synth.cancel(); } catch (e) {}
+  gapHold = false; try { proAudio.pause(); } catch (e) {}
+  setPlay(false);
+}
 
 $("bPlay").onclick = () => playing ? (stopSpeech(), toast("一時停止")) : speakFrom(cur, curWord);
 $("bAgain").onclick = () => speakFrom(cur, 0);
@@ -818,9 +853,275 @@ document.addEventListener("keydown", e => {
   else if (e.key === "ArrowLeft") $("bPrev").click();
   else if (e.key === "ArrowRight") $("bNext").click();
 });
-// 画面を離れたら止める（スマホでの止まり方をはっきりさせる）
-document.addEventListener("visibilitychange", () => { if (document.hidden && playing) stopSpeech(); });
+// ブラウザの声は画面を離れると止まってしまうので、止めたことをはっきりさせる。
+// プロの声（音声ファイル）は画面を消しても聴き続けられるので止めない。
+document.addEventListener("visibilitychange", () => { if (document.hidden && playing && !proActive()) stopSpeech(); });
 window.addEventListener("pagehide", stopSpeech);
+
+/* ================= プロの声（OpenAI） =================
+   1) スライドごとに OpenAI の声で MP3 を作る（gpt-4o-mini-tts）
+   2) できた音声をもう一度聞き取らせて、単語ごとの時間を調べる（whisper-1）
+   3) 全部つなげて1つの音声にして、このブラウザ（IndexedDB）に保存
+   4) 再生中は時間に合わせて単語に色をつける。画面を消しても再生は続く */
+const PRO_VOICES = [["nova", "Nova（女性・明るい）"], ["shimmer", "Shimmer（女性・やわらか）"], ["coral", "Coral（女性・あたたか）"],
+  ["sage", "Sage（女性・落ち着き）"], ["alloy", "Alloy（中性）"], ["ash", "Ash（男性・はっきり）"], ["echo", "Echo（男性・落ち着き）"],
+  ["onyx", "Onyx（男性・低め）"], ["ballad", "Ballad（男性・やわらか）"], ["verse", "Verse（男性・表情ゆたか）"], ["fable", "Fable（イギリス風）"]];
+const PRO_STYLE = "Speak as a calm, confident native English business presenter giving a talk to colleagues. " +
+  "Use warm, natural intonation that follows the meaning of the whole passage. Give clear emphasis to key words, numbers and dates. " +
+  "Keep a moderate, easy-to-follow pace with natural pauses between ideas, and end questions with a natural rising or inviting tone.";
+if (!ST.proVoice) ST.proVoice = "nova";
+if (!ST.proStyle) ST.proStyle = PRO_STYLE;
+if (ST.usePro === undefined) ST.usePro = true;
+
+const proAudio = $("proAudio");
+let pro = null, proURL = null, proStale = false, proBusy = false, gapHold = false;
+const proActive = () => !!(pro && ST.usePro);
+
+// ---- 保存場所（IndexedDB。音声ファイルは大きいので localStorage ではなくこちら） ----
+const idb = (() => {
+  let p;
+  const open = () => p || (p = new Promise((res, rej) => {
+    const r = indexedDB.open("scriptCoachAudio", 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("audio");
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  }));
+  const run = async (mode, fn) => {
+    const db = await open();
+    return new Promise((res, rej) => {
+      const t = db.transaction("audio", mode), req = fn(t.objectStore("audio"));
+      t.oncomplete = () => res(req && req.result); t.onerror = () => rej(t.error);
+    });
+  };
+  return { get: k => run("readonly", s => s.get(k)), put: (k, v) => run("readwrite", s => s.put(v, k)), del: k => run("readwrite", s => s.delete(k)) };
+})();
+
+// ---- 送る文章を作る（スライドごと。長すぎるときは段落で分ける） ----
+const normW = s => String(s).toLowerCase().replace(/[^a-z0-9]/g, "");
+function proGroups() {
+  const groups = []; let g = null, lastSec = -1, lastPara = -1;
+  sentences.forEach((s, si) => {
+    const newPara = s.para !== lastPara;
+    if (!g || s.sec !== lastSec || (newPara && g.input.length > 2500)) { g = { input: "", words: [] }; groups.push(g); }
+    else if (newPara) g.input += "\n\n";
+    s.words.forEach((w, wi) => {
+      const say = sayWord(w, true);
+      if (g.input && !g.input.endsWith("\n")) g.input += " ";
+      g.input += say;
+      g.words.push({ si, wi, norm: normW(say) });
+    });
+    lastSec = s.sec; lastPara = s.para;
+  });
+  return groups;
+}
+function hashStr(s) { let h = 5381; for (let i = 0; i < s.length; i++) h = (h * 33 + s.charCodeAt(i)) >>> 0; return h.toString(36) + "-" + s.length; }
+const proHash = () => hashStr(JSON.stringify(proGroups().map(g => g.input)));
+const proYen = () => { const words = sentences.reduce((a, s) => a + s.words.length, 0); return Math.max(1, Math.ceil(words / 150 * 0.021 * 155)); };
+
+// ---- OpenAI へのお願い ----
+async function oai(path, body, isForm) {
+  let r;
+  try {
+    r = await fetch("https://api.openai.com/v1/" + path, {
+      method: "POST",
+      headers: Object.assign({ Authorization: "Bearer " + (ST.apiKey || "").trim() }, isForm ? {} : { "Content-Type": "application/json" }),
+      body: isForm ? body : JSON.stringify(body)
+    });
+  } catch (e) { throw new Error("インターネットにつながらないか、ブラウザに止められました"); }
+  if (!r.ok) {
+    let msg = ""; try { msg = (await r.json()).error?.message || ""; } catch (e) {}
+    if (r.status === 401) throw new Error("APIキーがちがうようです。もう一度コピーして貼りつけてください");
+    if (r.status === 429) throw new Error("残高が足りないか、使いすぎの上限に達しました（または混んでいます）。OpenAIの Billing を確認してください");
+    throw new Error(`OpenAIでエラーが出ました（${r.status}）${msg ? "：" + msg : ""}`);
+  }
+  return r;
+}
+async function proSpeech(input) {
+  return (await oai("audio/speech", { model: "gpt-4o-mini-tts", voice: ST.proVoice, input, instructions: ST.proStyle, response_format: "mp3" })).blob();
+}
+async function proListen(blob) {
+  const fd = new FormData();
+  fd.append("file", blob, "part.mp3"); fd.append("model", "whisper-1"); fd.append("language", "en");
+  fd.append("response_format", "verbose_json"); fd.append("timestamp_granularities[]", "word");
+  return (await oai("audio/transcriptions", fd, true)).json();
+}
+const blobDuration = blob => new Promise(res => {
+  const a = new Audio(); a.preload = "metadata";
+  a.onloadedmetadata = () => { res(isFinite(a.duration) ? a.duration : 0); URL.revokeObjectURL(a.src); };
+  a.onerror = () => res(0); a.src = URL.createObjectURL(blob);
+});
+// 聞き取った単語と原稿の単語を順番に合わせる。合わなかった単語は前後から時間を割りふる
+function align(words, heard, dur) {
+  const out = words.map(w => ({ si: w.si, wi: w.wi, t: null }));
+  let j = 0;
+  words.forEach((w, i) => {
+    if (!w.norm) return;
+    for (let k = j; k < Math.min(j + 6, heard.length); k++) {
+      const h = normW(heard[k].word);
+      if (h && (h === w.norm || (w.norm.length >= 4 && h.length >= 4 && h.slice(0, 4) === w.norm.slice(0, 4)))) { out[i].t = heard[k].start; j = k + 1; break; }
+    }
+  });
+  for (let i = 0; i < out.length; i++) {
+    if (out[i].t !== null) continue;
+    let a = i - 1; while (a >= 0 && out[a].t === null) a--;
+    let b = i + 1; while (b < out.length && out[b].t === null) b++;
+    const ta = a >= 0 ? out[a].t : 0, tb = b < out.length ? out[b].t : dur;
+    out[i].t = ta + (tb - ta) * (i - a) / (b - a);
+  }
+  for (let i = 1; i < out.length; i++) if (out[i].t < out[i - 1].t) out[i].t = out[i - 1].t;
+  return out;
+}
+
+// ---- 音声を作る ----
+async function proMake() {
+  if (proBusy || !script) return;
+  if (!(ST.apiKey || "").trim()) { toast("先にAPIキーを入れてください"); return; }
+  const s = script, groups = proGroups();
+  if (!groups.length) { toast("英文がありません"); return; }
+  proBusy = true; stopSpeech(); proUI();
+  const prog = $("proProg");
+  try {
+    const parts = [], times = []; let offset = 0;
+    for (let i = 0; i < groups.length; i++) {
+      prog.textContent = `声を作っています…（${i + 1} / ${groups.length}）`;
+      const blob = await proSpeech(groups[i].input);
+      prog.textContent = `単語のタイミングを調べています…（${i + 1} / ${groups.length}）`;
+      const heard = await proListen(blob);
+      const dur = heard.duration || await blobDuration(blob);
+      align(groups[i].words, heard.words || [], dur).forEach(w => times.push({ si: w.si, wi: w.wi, t: offset + w.t }));
+      parts.push(blob); offset += dur;
+    }
+    const d = new Date();
+    const rec = { hash: proHash(), blob: new Blob(parts, { type: "audio/mpeg" }), times, duration: offset,
+                  voice: ST.proVoice, made: `${d.getMonth() + 1}/${d.getDate()}` };
+    try { await idb.put(s.id, rec); } catch (e) { toast("スマホに保存できませんでした（今回だけ聴けます）"); }
+    if (script === s) { proSet(rec); proStale = false; }
+    prog.textContent = ""; toast("できました！ ▶ で聴けます");
+  } catch (e) {
+    prog.textContent = "⚠ " + e.message;
+  } finally { proBusy = false; proUI(); }
+}
+
+// ---- 読みこみ・再生 ----
+async function proLoad(s) {
+  pro = null; proStale = false;
+  if (proURL) { URL.revokeObjectURL(proURL); proURL = null; }
+  proAudio.removeAttribute("src");
+  let rec = null; try { rec = await idb.get(s.id); } catch (e) {}
+  if (script !== s) return;
+  if (rec && rec.hash === proHash()) proSet(rec); else proStale = !!rec;
+  proUI();
+}
+function proSet(rec) {
+  pro = rec;
+  if (proURL) URL.revokeObjectURL(proURL);
+  proURL = URL.createObjectURL(rec.blob); proAudio.src = proURL;
+  proUI();
+}
+function timeOf(si, wi) {
+  const e = pro.times.find(x => x.si === si && x.wi === wi) || pro.times.find(x => x.si >= si);
+  return e ? e.t : 0;
+}
+function posAt(t) {
+  const a = pro.times; if (!a.length) return null;
+  let lo = 0, hi = a.length - 1;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (a[mid].t <= t + 0.05) lo = mid; else hi = mid - 1; }
+  return a[lo];
+}
+function proPlayFrom(si, wi) {
+  if (!sentences[si]) return;
+  clearTimers(); gapHold = false;
+  cur = si; curWord = wi; mark(si, wi); follow(si); updateMeta();
+  try { proAudio.currentTime = timeOf(si, wi); } catch (e) {}
+  proAudio.playbackRate = +ST.rate;
+  proAudio.play().then(() => setPlay(true)).catch(() => toast("再生できませんでした。もう一度 ▶ を押してください"));
+  if ("mediaSession" in navigator && window.MediaMetadata)
+    navigator.mediaSession.metadata = new MediaMetadata({ title: script?.title || "英語プレゼン", artist: "Script Coach" });
+}
+function proSync() {
+  if (!pro) return;
+  const e = posAt(proAudio.currentTime); if (!e) return;
+  if (e.si !== cur) {
+    const prev = cur;
+    cur = e.si; mark(e.si, e.wi); follow(e.si); updateMeta();
+    // 「後について言う」：1文ごとに止めて、同じくらいの時間待つ
+    if (ST.gap === "same" && !proAudio.paused && e.si === prev + 1) {
+      const wait = Math.max(900, (timeOf(e.si, 0) - timeOf(prev, 0)) * 1000 / proAudio.playbackRate + 300);
+      gapHold = true; proAudio.pause(); toast("🗣 続けて言ってみましょう");
+      timers.push(setTimeout(() => { gapHold = false; if (playing) proAudio.play(); }, wait));
+    }
+  }
+  markWord(e.si, e.wi);
+}
+function proTick() { if (!proAudio.paused) { proSync(); requestAnimationFrame(proTick); } }
+proAudio.addEventListener("play", () => { setPlay(true); proTick(); });
+proAudio.addEventListener("pause", () => { if (!gapHold) setPlay(false); });
+proAudio.addEventListener("timeupdate", proSync);
+proAudio.addEventListener("ended", () => {
+  if (ST.loop) { proAudio.currentTime = 0; proAudio.play(); return; }
+  setPlay(false); mark(cur, -1); cur = 0; curWord = 0; updateMeta(); toast("おつかれさまでした 🎉");
+});
+if ("mediaSession" in navigator) {
+  const ms = navigator.mediaSession, h = (a, f) => { try { ms.setActionHandler(a, f); } catch (e) {} };
+  h("play", () => { if (!playing) $("bPlay").click(); });
+  h("pause", () => { if (playing) $("bPlay").click(); });
+  h("previoustrack", () => $("bPrev").click());
+  h("nexttrack", () => $("bNext").click());
+}
+
+// ---- 画面 ----
+$("sProVoice").innerHTML = PRO_VOICES.map(([v, t]) => `<option value="${v}">${t}</option>`).join("");
+function proUI() {
+  const key = !!(ST.apiKey || "").trim(), inRead = $("vRead").classList.contains("on") && script && sentences.length;
+  // 読み上げ画面の上のボタン（APIキーがあるか、音声があるときだけ出す）
+  const pill = $("proPill");
+  pill.classList.toggle("hidden", !inRead || !(key || pro));
+  pill.classList.toggle("on", proActive());
+  pill.textContent = proActive() ? "✨ プロの声" : proStale ? "✨ 作り直す" : pro ? "✨ ブラウザの声" : "✨ プロの声を作る";
+  $("pMode").textContent = proActive() ? "✨ プロの声" : "";
+  // 設定のページ
+  $("proHere").classList.toggle("hidden", !inRead);
+  if (inRead) {
+    $("proTitle").textContent = "この原稿：" + script.title;
+    $("proState").textContent = proBusy ? "作っています。画面はそのままでお待ちください（数十秒〜数分）"
+      : pro ? `作成ずみ（${(PRO_VOICES.find(v => v[0] === pro.voice) || [pro.voice, pro.voice])[1].split("（")[0]}・${pro.made}）。次からはお金はかかりません`
+      : proStale ? "原稿が変わったので、作り直すと新しい原稿で聴けます"
+      : "まだ作っていません";
+    $("proMake").disabled = proBusy || !key;
+    $("proMake").textContent = proBusy ? "作っています…" : `✨ ${pro ? "作り直す" : "この原稿の音声を作る"}（約${proYen()}円・目安）`;
+    if (!key && !proBusy) $("proProg").textContent = "下の「APIキー」を入れると作れます";
+    else if ($("proProg").textContent === "下の「APIキー」を入れると作れます") $("proProg").textContent = "";
+    $("proUseRow").classList.toggle("hidden", !pro);
+    $("proDel").classList.toggle("hidden", !pro && !proStale);
+  }
+  $("sUsePro").checked = !!ST.usePro;
+  $("sProVoice").value = ST.proVoice;
+  if (document.activeElement !== $("sProStyle")) $("sProStyle").value = ST.proStyle;
+  if (document.activeElement !== $("sApiKey")) $("sApiKey").value = ST.apiKey || "";
+  $("proTry").disabled = !key;
+}
+$("openPro").onclick = () => showPage("Pro");
+$("closePro").onclick = () => showPage("Main");
+$("proPill").onclick = () => { openSheet(); showPage("Pro"); };
+$("proMake").onclick = proMake;
+$("proDel").onclick = async () => {
+  if (!(await ask("この原稿のプロの声を消しますか？\n（作り直すと、またお金がかかります）"))) return;
+  stopSpeech(); try { await idb.del(script.id); } catch (e) {}
+  pro = null; proStale = false; proAudio.removeAttribute("src"); proUI(); toast("消しました");
+};
+$("sUsePro").onchange = () => { stopSpeech(); ST.usePro = $("sUsePro").checked; save(); proUI(); };
+$("sProVoice").onchange = () => { ST.proVoice = $("sProVoice").value; save(); proUI(); };
+$("sProStyle").oninput = () => { ST.proStyle = $("sProStyle").value.trim() || PRO_STYLE; save(); };
+$("sApiKey").oninput = () => { ST.apiKey = $("sApiKey").value.trim(); save(); proUI(); };
+$("proTry").onclick = async () => {
+  const btn = $("proTry"), first = sentences[0] ? sentences[0].words.map(w => sayWord(w, true)).join(" ") : "Hello everyone, thank you for joining today.";
+  btn.disabled = true; btn.textContent = "作っています…";
+  try {
+    const blob = await proSpeech(first.slice(0, 300));
+    stopSpeech();
+    const a = new Audio(URL.createObjectURL(blob)); a.playbackRate = +ST.rate; await a.play();
+  } catch (e) { toast(e.message); }
+  finally { btn.textContent = "▶ この声を試しに聴く（1文・約0.1円）"; proUI(); }
+};
 
 /* ================= ロック（パスワードで原稿を開く） ================= */
 const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
